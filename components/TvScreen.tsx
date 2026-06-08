@@ -282,7 +282,14 @@ export default function TvScreen() {
 
         if (program) {
           initializedRef.current = true;
+          staticStartTimeRef.current = Date.now();
+          setStaticActive(true);
           playProgram(program);
+
+          if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current);
+          safetyTimerRef.current = setTimeout(() => {
+            setStaticActive(false);
+          }, STATIC_SAFETY);
         }
       })
       .catch(() => {

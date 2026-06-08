@@ -29,6 +29,8 @@ const CHANNEL_COL_WIDTH = 72;
 const ROW_HEIGHT = 64;
 const TIME_HEADER_HEIGHT = 28;
 const TIME_LABEL_INTERVAL = 30;
+const DAY_SECONDS = 86400;
+const DAY_WIDTH = DAY_SECONDS * PX_PER_SECOND;
 
 function secondsSinceMidnight(date: Date): number {
   return (
@@ -39,26 +41,46 @@ function secondsSinceMidnight(date: Date): number {
   );
 }
 
-function formatTimeLabel(totalSeconds: number, now: Date): string {
-  const absSec = secondsSinceMidnight(now) + totalSeconds;
-  const h = Math.floor((absSec % 86400) / 3600);
-  const m = Math.floor((absSec % 3600) / 60);
-  const s = Math.floor(absSec % 60);
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+function formatTimeLabel(totalSeconds: number): string {
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-function buildStaticTimeline(timeline: TimelineEntry[]): DisplayEntry[] {
-  return timeline
-    .map((entry) => {
+function buildUnifiedTimeline(
+  timeline: TimelineEntry[],
+  totalDuration: number,
+): DisplayEntry[] {
+  if (totalDuration === 0 || timeline.length === 0) return [];
+
+  const entries: DisplayEntry[] = [];
+  let cycles = 0;
+
+  while (true) {
+    let added = false;
+    for (const entry of timeline) {
       const duration = entry.video.duration ?? 60;
-      return {
+      const absStart = cycles * totalDuration + entry.startTime;
+
+      if (absStart >= DAY_SECONDS) continue;
+
+      const absEnd = absStart + duration;
+      const displayEnd = Math.min(absEnd, DAY_SECONDS);
+
+      entries.push({
         title: entry.video.title,
         thumbnail: entry.video.thumbnail,
-        startPx: entry.startTime * PX_PER_SECOND,
-        widthPx: duration * PX_PER_SECOND,
-      };
-    })
-    .sort((a, b) => a.startPx - b.startPx);
+        startPx: absStart * PX_PER_SECOND,
+        widthPx: Math.max((displayEnd - absStart) * PX_PER_SECOND, 4),
+      });
+      added = true;
+    }
+    if (!added) break;
+    cycles++;
+  }
+
+  entries.sort((a, b) => a.startPx - b.startPx);
+  return entries;
 }
 
 export default function TvGuide({
@@ -69,90 +91,87 @@ export default function TvGuide({
 }: TvGuideProps) {
   const [focusChannel, setFocusChannel] = useState(currentChannel);
   const channelsRef = useRef<HTMLDivElement>(null);
-  const rowsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const timeHeaderRef = useRef<HTMLDivElement>(null);
   const syncingScroll = useRef(false);
+  const syncingTimeScroll = useRef(false);
 
-  const [snapshotNow] = useState(() => new Date());
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(() =>
+    secondsSinceMidnight(new Date()),
+  );
 
   useEffect(() => {
     const id = setInterval(() => {
-      setElapsed(
-        ((secondsSinceMidnight(new Date()) - secondsSinceMidnight(snapshotNow) + 86400) % 86400),
-      );
+      setElapsed(secondsSinceMidnight(new Date()));
     }, 500);
     return () => clearInterval(id);
-  }, [snapshotNow]);
+  }, []);
+
+  const nowPx = elapsed * PX_PER_SECOND;
 
   const channelDisplays = useMemo(
     () =>
-      channels.map((ch) => {
-        const timeline =
-          ch.timeline.length > 0 ? buildStaticTimeline(ch.timeline) : [];
-        const nowOffset =
-          ch.totalDuration > 0
-            ? secondsSinceMidnight(snapshotNow) % ch.totalDuration
-            : 0;
-        return {
-          ...ch,
-          displayTimeline: timeline,
-          nowOffsetSec: nowOffset,
-        };
-      }),
-    [channels, snapshotNow],
+      channels.map((ch) => ({
+        ...ch,
+        displayTimeline: buildUnifiedTimeline(ch.timeline, ch.totalDuration),
+      })),
+    [channels],
   );
 
-  const nowPx = channelDisplays.map((ch) => {
-    if (ch.totalDuration === 0) return 0;
-    return (
-      ((((ch.nowOffsetSec + elapsed) % ch.totalDuration) + ch.totalDuration) %
-        ch.totalDuration) *
-      PX_PER_SECOND
-    );
-  });
-
-  // Auto-scroll current channel's row to its NOW line
-  useEffect(() => {
-    const row = rowsRef.current[currentChannel];
-    if (row) {
-      const vw = row.clientWidth;
-      const target = Math.max(0, nowPx[currentChannel] - vw * 0.15);
-      row.scrollLeft = target;
+  const timeLabels = useMemo(() => {
+    const labels: { label: string; left: number }[] = [];
+    for (let t = 0; t <= DAY_SECONDS; t += TIME_LABEL_INTERVAL) {
+      labels.push({
+        label: formatTimeLabel(t),
+        left: t * PX_PER_SECOND,
+      });
     }
-  }, [currentChannel, nowPx]);
+    return labels;
+  }, []);
 
-  // Sync vertical scroll
-  const syncScrollY = useCallback(
-    (source: "channels" | "grid") => {
-      if (syncingScroll.current) return;
+  const handleChannelScroll = useCallback(() => {
+    if (syncingScroll.current) return;
+    syncingScroll.current = true;
+    if (channelsRef.current && gridRef.current) {
+      gridRef.current.scrollTop = channelsRef.current.scrollTop;
+    }
+    requestAnimationFrame(() => {
+      syncingScroll.current = false;
+    });
+  }, []);
+
+  const handleGridScroll = useCallback(() => {
+    if (!syncingScroll.current && channelsRef.current && gridRef.current) {
       syncingScroll.current = true;
-
-      if (source === "channels" && channelsRef.current && rowsRef.current[focusChannel]) {
-        rowsRef.current[focusChannel]!.scrollIntoView({ block: "nearest" });
-      } else if (source === "grid" && rowsRef.current.length > 0) {
-        const topRow = rowsRef.current.find((r) => {
-          if (!r || !channelsRef.current) return false;
-          const parentRect = channelsRef.current.getBoundingClientRect();
-          const rowRect = r.getBoundingClientRect();
-          return rowRect.top >= parentRect.top;
-        });
-        if (topRow) {
-          const idx = rowsRef.current.indexOf(topRow);
-          if (idx >= 0 && channelsRef.current) {
-            const chEl = channelsRef.current.querySelector(
-              `[data-focus-row="${idx}"]`,
-            ) as HTMLElement | null;
-            chEl?.scrollIntoView({ block: "nearest" });
-          }
-        }
-      }
-
+      channelsRef.current.scrollTop = gridRef.current.scrollTop;
       requestAnimationFrame(() => {
         syncingScroll.current = false;
       });
-    },
-    [focusChannel],
-  );
+    }
+
+    if (
+      !syncingTimeScroll.current &&
+      timeHeaderRef.current &&
+      gridRef.current
+    ) {
+      syncingTimeScroll.current = true;
+      timeHeaderRef.current.scrollLeft = gridRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        syncingTimeScroll.current = false;
+      });
+    }
+  }, []);
+
+  const handleTimeHeaderScroll = useCallback(() => {
+    if (syncingTimeScroll.current) return;
+    syncingTimeScroll.current = true;
+    if (gridRef.current && timeHeaderRef.current) {
+      gridRef.current.scrollLeft = timeHeaderRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => {
+      syncingTimeScroll.current = false;
+    });
+  }, []);
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
@@ -166,16 +185,10 @@ export default function TvGuide({
         setFocusChannel((prev) => (prev + 1) % channels.length);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        rowsRef.current[focusChannel]?.scrollBy({
-          left: -180,
-          behavior: "smooth",
-        });
+        gridRef.current?.scrollBy({ left: -180, behavior: "smooth" });
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        rowsRef.current[focusChannel]?.scrollBy({
-          left: 180,
-          behavior: "smooth",
-        });
+        gridRef.current?.scrollBy({ left: 180, behavior: "smooth" });
       } else if (e.key === "Enter") {
         e.preventDefault();
         onSelect(focusChannel);
@@ -193,10 +206,18 @@ export default function TvGuide({
   }, [handleKey]);
 
   useEffect(() => {
-    const el = channelsRef.current?.querySelector<HTMLElement>(
-      `[data-focus-row="${focusChannel}"]`,
-    );
-    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!gridRef.current) return;
+    const targetTop = focusChannel * ROW_HEIGHT;
+    const grid = gridRef.current;
+    const viewTop = grid.scrollTop;
+    const viewBottom = viewTop + grid.clientHeight;
+
+    if (targetTop < viewTop || targetTop + ROW_HEIGHT > viewBottom) {
+      grid.scrollTo({
+        top: Math.max(0, targetTop - ROW_HEIGHT),
+        behavior: "smooth",
+      });
+    }
   }, [focusChannel]);
 
   return (
@@ -212,106 +233,114 @@ export default function TvGuide({
         overflow: "hidden",
       }}
     >
+      {/* Time header */}
+      <div className="flex shrink-0" style={{ height: TIME_HEADER_HEIGHT }}>
+        {/* Corner spacer aligned with channel column */}
+        <div
+          className="shrink-0 border-b border-r border-green-700/40 bg-green-900/60 flex items-center justify-center"
+          style={{ width: CHANNEL_COL_WIDTH }}
+        >
+          <span className="text-green-300/80 font-mono text-[10px] tracking-widest">
+            CH
+          </span>
+        </div>
+
+        {/* Horizontally-scrollable time labels */}
+        <div
+          ref={timeHeaderRef}
+          className="flex-1 overflow-hidden border-b border-green-700/40 bg-green-900/50"
+          onScroll={handleTimeHeaderScroll}
+        >
+          <div style={{ width: DAY_WIDTH, height: "100%", position: "relative" }}>
+            {timeLabels.map((tl, i) => (
+              <div
+                key={i}
+                className="absolute top-1/2 -translate-y-1/2 font-mono text-[9px] tracking-wider text-green-400/60 whitespace-nowrap select-none"
+                style={{ left: tl.left }}
+              >
+                {tl.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Channel column */}
         <div
-          className="shrink-0 border-r border-green-700/40 bg-green-900/40 overflow-hidden flex flex-col select-none"
+          ref={channelsRef}
+          className="shrink-0 border-r border-green-700/40 bg-green-900/40 overflow-y-auto scrollbar-none select-none"
           style={{ width: CHANNEL_COL_WIDTH }}
+          onScroll={handleChannelScroll}
         >
-          <div
-            className="shrink-0 border-b border-green-700/40 bg-green-900/60 flex items-center justify-center"
-            style={{ height: TIME_HEADER_HEIGHT }}
-          >
-            <span className="text-green-300/80 font-mono text-[10px] tracking-widest">
-              CH
-            </span>
-          </div>
-
-          <div
-            className="flex-1 overflow-y-auto scrollbar-none"
-            ref={channelsRef}
-            onScroll={() => syncScrollY("channels")}
-          >
-            {channelDisplays.map((ch) => {
-              const idx = ch.num - 1;
-              const isActive = idx === currentChannel;
-              const isFocused = idx === focusChannel;
-              return (
-                <div
-                  key={ch.num}
-                  data-focus-row={idx}
-                  onClick={() => onSelect(idx)}
-                  className={`flex items-center justify-center border-b border-green-700/30 cursor-pointer transition-colors ${
-                    isActive
-                      ? "bg-green-500/15 text-green-200"
-                      : isFocused
-                        ? "bg-green-800/30 text-green-300"
-                        : "text-green-400/60 hover:bg-green-800/20 hover:text-green-300"
-                  }`}
-                  style={{ height: ROW_HEIGHT }}
-                >
-                  <span className="font-mono text-sm tracking-wider tabular-nums font-bold">
-                    {String(ch.num).padStart(2, "0")}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Channel rows column */}
-        <div
-          className="flex-1 overflow-y-auto scrollbar-none"
-          onScroll={() => syncScrollY("grid")}
-        >
-          {channelDisplays.map((ch, chIdx) => {
+          {channelDisplays.map((ch) => {
             const idx = ch.num - 1;
             const isActive = idx === currentChannel;
             const isFocused = idx === focusChannel;
-            const chNowPx = nowPx[chIdx];
-            const chWidth = (ch.totalDuration || 1) * PX_PER_SECOND;
-
-            const timeLabels: { label: string; left: number }[] = [];
-            for (let t = 0; t <= (ch.totalDuration || 0); t += TIME_LABEL_INTERVAL) {
-              timeLabels.push({
-                label: formatTimeLabel(t, snapshotNow),
-                left: t * PX_PER_SECOND,
-              });
-            }
-
             return (
               <div
                 key={ch.num}
-                className={`border-b border-green-700/30 cursor-pointer transition-colors ${
+                data-focus-row={idx}
+                onClick={() => onSelect(idx)}
+                className={`flex items-center justify-center border-b border-green-700/30 cursor-pointer transition-colors ${
                   isActive
-                    ? "bg-green-500/8"
+                    ? "bg-green-500/15 text-green-200"
                     : isFocused
-                      ? "bg-green-800/15"
-                      : "hover:bg-green-800/10"
+                      ? "bg-green-800/30 text-green-300"
+                      : "text-green-400/60 hover:bg-green-800/20 hover:text-green-300"
                 }`}
                 style={{ height: ROW_HEIGHT }}
-                onClick={() => onSelect(idx)}
               >
-                <div
-                  ref={(el) => { rowsRef.current[chIdx] = el; }}
-                  className="h-full overflow-x-auto scrollbar-none relative"
-                >
-                  {/* Time labels */}
-                  {timeLabels.map((tl, i) => (
-                    <div
-                      key={i}
-                      className="absolute font-mono text-[9px] tracking-wider text-green-400/60 whitespace-nowrap select-none"
-                      style={{ left: tl.left, top: 2, zIndex: 5 }}
-                    >
-                      {tl.label}
-                    </div>
-                  ))}
+                <span className="font-mono text-sm tracking-wider tabular-nums font-bold">
+                  {String(ch.num).padStart(2, "0")}
+                </span>
+              </div>
+            );
+          })}
+        </div>
 
-                  {/* Show blocks */}
+        {/* Shared grid: scrolls both vertically (channels) and horizontally (time) */}
+        <div
+          ref={gridRef}
+          className="flex-1 overflow-auto scrollbar-none"
+          onScroll={handleGridScroll}
+        >
+          <div
+            style={{
+              width: DAY_WIDTH,
+              height: channelDisplays.length * ROW_HEIGHT,
+              position: "relative",
+            }}
+          >
+            {channelDisplays.map((ch, chIdx) => {
+              const idx = ch.num - 1;
+              const isActive = idx === currentChannel;
+              const isFocused = idx === focusChannel;
+
+              return (
+                <div
+                  key={ch.num}
+                  className={`border-b border-green-700/30 cursor-pointer transition-colors ${
+                    isActive
+                      ? "bg-green-500/8"
+                      : isFocused
+                        ? "bg-green-800/15"
+                        : "hover:bg-green-800/10"
+                  }`}
+                  style={{
+                    position: "absolute",
+                    top: chIdx * ROW_HEIGHT,
+                    left: 0,
+                    right: 0,
+                    height: ROW_HEIGHT,
+                  }}
+                  onClick={() => onSelect(idx)}
+                >
                   {ch.displayTimeline.map((entry, i) => {
                     const isNow =
-                      entry.startPx <= chNowPx &&
-                      chNowPx < entry.startPx + entry.widthPx;
+                      entry.startPx <= nowPx &&
+                      nowPx < entry.startPx + entry.widthPx;
 
                     return (
                       <div
@@ -341,26 +370,23 @@ export default function TvGuide({
                       </div>
                     );
                   })}
-
-                  {/* NOW line */}
-                  <div
-                    className="absolute top-0 bottom-0 w-px pointer-events-none"
-                    style={{
-                      left: chNowPx,
-                      zIndex: 10,
-                      background:
-                        "linear-gradient(to bottom, rgba(74,222,128,1), rgba(74,222,128,0.4))",
-                      boxShadow:
-                        "0 0 10px rgba(74,222,128,0.7), 0 0 3px rgba(74,222,128,0.4)",
-                    }}
-                  />
-
-                  {/* Spacer to ensure full width */}
-                  <div style={{ width: chWidth, height: 1 }} />
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+
+            {/* Single NOW line across all channels */}
+            <div
+              className="absolute top-0 bottom-0 w-px pointer-events-none"
+              style={{
+                left: nowPx,
+                zIndex: 10,
+                background:
+                  "linear-gradient(to bottom, rgba(74,222,128,1), rgba(74,222,128,0.4))",
+                boxShadow:
+                  "0 0 10px rgba(74,222,128,0.7), 0 0 3px rgba(74,222,128,0.4)",
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>
