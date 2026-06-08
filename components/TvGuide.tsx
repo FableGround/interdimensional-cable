@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { TimelineEntry } from "@/lib/schedule";
+import type { TimelineEntry, CurrentProgram } from "@/lib/schedule";
 
 export interface GuideChannel {
   num: number;
@@ -20,6 +20,7 @@ interface DisplayEntry {
 interface TvGuideProps {
   channels: GuideChannel[];
   currentChannel: number;
+  currentProgram: CurrentProgram | null;
   onSelect: (channel: number) => void;
   onClose: () => void;
 }
@@ -101,6 +102,7 @@ function buildUnifiedTimeline(
 export default function TvGuide({
   channels,
   currentChannel,
+  currentProgram,
   onSelect,
   onClose,
 }: TvGuideProps) {
@@ -256,11 +258,10 @@ export default function TvGuide({
         left: "7%",
         backgroundColor: "#0e1a11",
         borderRadius: "8px",
-        overflow: "hidden",
       }}
     >
       {/* Time header */}
-      <div className="flex shrink-0" style={{ height: TIME_HEADER_HEIGHT }}>
+      <div className="flex shrink-0" style={{ height: TIME_HEADER_HEIGHT, borderTopLeftRadius: 8, borderTopRightRadius: 8, overflow: "hidden" }}>
         <div
           className="shrink-0 border-b border-r border-green-700/40 bg-green-900/60 flex items-center justify-center"
           style={{ width: CHANNEL_COL_WIDTH }}
@@ -290,7 +291,7 @@ export default function TvGuide({
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden" style={{ overflow: "hidden" }}>
         {/* Channel column */}
         <div
           ref={channelsRef}
@@ -413,6 +414,50 @@ export default function TvGuide({
           </div>
         </div>
       </div>
+
+      {currentProgram && (
+        <div
+          className="shrink-0 flex items-center gap-2.5 px-5"
+          style={{
+            height: 52,
+            backgroundColor: "#091a0e",
+            borderTop: "1px solid rgba(74,222,128,0.15)",
+            borderBottomLeftRadius: 8,
+            borderBottomRightRadius: 8,
+            width: "90%",
+            marginLeft: 13,
+          }}
+        >
+          {currentProgram.video.thumbnail && (
+            <img
+              src={currentProgram.video.thumbnail}
+              alt=""
+              className="h-9 w-14 rounded object-cover shrink-0"
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-green-200 font-mono text-[11px] leading-tight truncate">
+              <span className="text-green-400/50">Now playing:</span>{" "}
+              {currentProgram.video.title}
+            </div>
+            <div className="text-green-400/40 font-mono text-[9px] mt-0.5">
+              r/{currentProgram.video.subreddit} &middot; u/{currentProgram.video.author}
+            </div>
+          </div>
+          <a
+            href={
+              currentProgram.video.permalink.startsWith("http")
+                ? currentProgram.video.permalink
+                : `https://reddit.com${currentProgram.video.permalink}`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 text-green-400/60 hover:text-green-300 font-mono text-[10px] tracking-wider border border-green-700/40 px-1.5 py-0.5 rounded hover:border-green-500/50 transition-colors"
+          >
+            LINK
+          </a>
+        </div>
+      )}
     </div>
   );
 }

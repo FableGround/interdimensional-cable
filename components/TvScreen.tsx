@@ -515,6 +515,7 @@ export default function TvScreen() {
                   <TvGuide
                     channels={guideChannels}
                     currentChannel={selectedChannel}
+                    currentProgram={program}
                     onSelect={selectChannel}
                     onClose={() => setGuideOpen(false)}
                   />
