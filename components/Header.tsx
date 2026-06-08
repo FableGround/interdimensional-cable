@@ -23,7 +23,7 @@ export default function Header() {
   return (
     <div className="w-full text-center select-none" style={{ zIndex: 60 }}>
       <div
-        className="text-3xl leading-tight tracking-[0.05em] flex flex-col items-center"
+        className="text-5xl leading-tight tracking-[0.05em] flex flex-col items-center"
         style={{ fontFamily: "var(--font-display)", color: "#3d2b4f" }}
       >
         <div className="flex">
