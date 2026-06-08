@@ -401,7 +401,7 @@ export default function TvScreen() {
 
   return (
     <div
-      style={{ background: `url('/bg2.png') center/cover no-repeat` }}
+      style={{ background: `url('${withBase("/bg2.png")}') center/cover no-repeat` }}
       className="min-h-screen flex flex-col items-center justify-center p-8 font-sans relative overflow-hidden"
     >
       {/* Outer wrapper: in fullscreen becomes fixed, otherwise flex layout */}
