@@ -33,6 +33,7 @@ jobs:
       - run: npm run build
         env:
           DATABASE_URL: "file:./dev.db"
+          GITHUB_PAGES: "true"
 
       - uses: actions/upload-pages-artifact@v3
         with:
