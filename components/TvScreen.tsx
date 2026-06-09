@@ -8,6 +8,7 @@ import VhsTexture from "./VhsTexture";
 import ChannelOverlay from "./ChannelOverlay";
 import TvGuide from "./TvGuide";
 import RemoteControl from "./RemoteControl";
+import MobileControls from "./MobileControls";
 import Header from "./Header";
 import {
   type VideoEntry,
@@ -46,6 +47,7 @@ export default function TvScreen() {
   const [showVolumeOsd, setShowVolumeOsd] = useState(false);
   const [pendingDigit, setPendingDigit] = useState<string | null>(null);
   const [launched, setLaunched] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,37 +60,34 @@ export default function TvScreen() {
   const pendingDigitRef = useRef<string | null>(null);
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const buildAllSchedules = useCallback(
-    (vids: VideoEntry[]) => {
-      if (vids.length === 0) return { schedules: new Map<number, ScheduleResult>(), dateStr: "" };
+  const buildAllSchedules = useCallback((vids: VideoEntry[]) => {
+    if (vids.length === 0) return { schedules: new Map<number, ScheduleResult>(), dateStr: "" };
 
-      const date = new Date();
-      const dateStr = dateStringUTC(date);
+    const date = new Date();
+    const dateStr = dateStringUTC(date);
 
-      const schedules = new Map<number, ScheduleResult>();
-      for (let i = 0; i < NUM_CHANNELS; i++) {
-        const sub = SUBREDDITS[i];
-        const channelVids = i === NUM_CHANNELS - 1 ? vids.filter((v) => v.isBest) : vids.filter((v) => v.subreddit.toLowerCase() === sub.toLowerCase());
-        schedules.set(i, buildSchedule(channelVids, i, date));
-      }
-      return { schedules, dateStr };
-    },
-    [],
-  );
+    const schedules = new Map<number, ScheduleResult>();
+    for (let i = 0; i < NUM_CHANNELS; i++) {
+      const sub = SUBREDDITS[i];
+      const channelVids =
+        i === NUM_CHANNELS - 1
+          ? vids.filter((v) => v.isBest)
+          : vids.filter((v) => v.subreddit.toLowerCase() === sub.toLowerCase());
+      schedules.set(i, buildSchedule(channelVids, i, date));
+    }
+    return { schedules, dateStr };
+  }, []);
 
-  const playProgram = useCallback(
-    (program: CurrentProgram) => {
-      const p = playerRef.current;
-      if (!p) return;
+  const playProgram = useCallback((program: CurrentProgram) => {
+    const p = playerRef.current;
+    if (!p) return;
 
-      currentVideoId.current = program.video.id;
-      p.setSrc(program.video.videoUrl);
-      setTimeout(() => {
-        p.play(program.offsetSeconds);
-      }, 100);
-    },
-    [],
-  );
+    currentVideoId.current = program.video.id;
+    p.setSrc(program.video.videoUrl);
+    setTimeout(() => {
+      p.play(program.offsetSeconds);
+    }, 100);
+  }, []);
 
   const handlePlaying = useCallback(() => {
     if (staticStartTimeRef.current === 0) return;
@@ -177,9 +176,7 @@ export default function TvScreen() {
     const timeline = schedule.timeline;
     if (timeline.length === 0) return;
 
-    const currentIdx = timeline.findIndex(
-      (t) => t.video.id === currentVideoId.current,
-    );
+    const currentIdx = timeline.findIndex((t) => t.video.id === currentVideoId.current);
     const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % timeline.length : 0;
     const nextVideo = timeline[nextIdx].video;
 
@@ -227,32 +224,29 @@ export default function TvScreen() {
   const selectChannelRef = useRef(selectChannel);
   selectChannelRef.current = selectChannel;
 
-  const handleNumberPress = useCallback(
-    (num: number) => {
-      if (pendingDigitRef.current !== null) {
-        if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
-        const channelStr = `${pendingDigitRef.current}${num}`;
+  const handleNumberPress = useCallback((num: number) => {
+    if (pendingDigitRef.current !== null) {
+      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+      const channelStr = `${pendingDigitRef.current}${num}`;
+      pendingDigitRef.current = null;
+      setPendingDigit(null);
+      const ch = parseInt(channelStr, 10);
+      if (ch >= 1 && ch <= NUM_CHANNELS) {
+        selectChannelRef.current(ch - 1);
+      }
+    } else {
+      pendingDigitRef.current = String(num);
+      setPendingDigit(String(num));
+      pendingTimeoutRef.current = setTimeout(() => {
+        const ch = parseInt(pendingDigitRef.current!, 10);
         pendingDigitRef.current = null;
         setPendingDigit(null);
-        const ch = parseInt(channelStr, 10);
         if (ch >= 1 && ch <= NUM_CHANNELS) {
           selectChannelRef.current(ch - 1);
         }
-      } else {
-        pendingDigitRef.current = String(num);
-        setPendingDigit(String(num));
-        pendingTimeoutRef.current = setTimeout(() => {
-          const ch = parseInt(pendingDigitRef.current!, 10);
-          pendingDigitRef.current = null;
-          setPendingDigit(null);
-          if (ch >= 1 && ch <= NUM_CHANNELS) {
-            selectChannelRef.current(ch - 1);
-          }
-        }, TWO_DIGIT_TIMEOUT);
-      }
-    },
-    [],
-  );
+      }, TWO_DIGIT_TIMEOUT);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,6 +382,14 @@ export default function TvScreen() {
     volumeOsdTimeoutRef.current = setTimeout(() => setShowVolumeOsd(false), 2000);
   }, [volume, muted]);
 
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 1023px)");
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
   if (!loaded) {
     return (
       <div className="w-full h-screen bg-black flex items-center justify-center">
@@ -401,7 +403,8 @@ export default function TvScreen() {
       <div className="w-full h-screen bg-black flex flex-col items-center justify-center gap-4">
         <div className="text-green-400 font-mono text-lg">NO SIGNAL</div>
         <div className="text-green-600 font-mono text-sm">
-          Run <code className="bg-green-900/30 px-2 py-0.5 rounded">npx tsx scripts/scrape.ts</code> to fetch videos
+          Run <code className="bg-green-900/30 px-2 py-0.5 rounded">npx tsx scripts/scrape.ts</code>{" "}
+          to fetch videos
         </div>
       </div>
     );
@@ -426,21 +429,28 @@ export default function TvScreen() {
     >
       {!fullscreen && (
         <>
-          <div className="h-[4vh]" />
+          <div className="hidden md:block h-[4vh]" />
           <Header />
         </>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center w-full p-8">
+      <div
+        className="flex-1 flex flex-col items-center justify-start md:justify-center w-full pt-20 px-2 md:pt-2"
+        style={{ paddingBottom: "max(0.5rem, 3vh)" }}
+      >
         {/* Outer wrapper: in fullscreen becomes fixed, otherwise flex layout */}
         <div
-          className={fullscreen ? "fixed inset-0 z-50" : "w-full max-w-4xl flex justify-center z-10"}
+          className={
+            fullscreen
+              ? "fixed inset-0 z-50"
+              : "w-full max-w-4xl flex justify-center z-10 my-6 md:my-0 lg:my-0"
+          }
         >
           <div
             className={
               fullscreen
                 ? "relative w-full h-full"
-                : "relative w-full max-w-[900px] flex items-center justify-center"
+                : "relative w-full max-w-[860px] flex items-center justify-center"
             }
           >
             <div
@@ -473,8 +483,17 @@ export default function TvScreen() {
                     onPlaying={handlePlaying}
                   />
 
+                  {fullscreen && (
+                    <button
+                      onClick={() => setFullscreen(false)}
+                      className="absolute top-4 left-4 z-50 px-3 py-2 bg-black/70 text-white text-sm font-mono tracking-wider border border-white/20 active:bg-white active:text-black transition-colors"
+                    >
+                      EXIT
+                    </button>
+                  )}
+
                   {(showVolumeOsd || muted) && (
-                    <div className="absolute bottom-10 left-20 z-40 font-mono drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]">
+                    <div className="absolute bottom-12 left-6 md:bottom-6 md:left-12 lg:bottom-10 lg:left-20 z-40 font-mono drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]">
                       <div className="text-sm tracking-widest text-green-400/80 mb-1.5">VOLUME</div>
                       <div className="flex gap-[8px]">
                         {muted ? (
@@ -485,7 +504,8 @@ export default function TvScreen() {
                               key={i}
                               className="w-[12px] h-12 rounded-[3px]"
                               style={{
-                                backgroundColor: i < Math.round(volume * 10) ? "#4ade80" : "#1a3a1a",
+                                backgroundColor:
+                                  i < Math.round(volume * 10) ? "#4ade80" : "#1a3a1a",
                                 boxShadow:
                                   i < Math.round(volume * 10)
                                     ? "0 0 8px rgba(74,222,128,0.6)"
@@ -503,13 +523,15 @@ export default function TvScreen() {
 
                 <VhsTexture />
 
-                <ChannelOverlay
-                  channel={selectedChannel + 1}
-                  visible={fullscreen ? true : !guideOpen}
-                  subreddit={program?.video.subreddit}
-                  pendingDigits={pendingDigit}
-                  totalChannels={NUM_CHANNELS}
-                />
+                <div className="absolute top-8 right-4 md:top-12 md:right-8 lg:top-16 lg:right-14 z-30">
+                  <ChannelOverlay
+                    channel={selectedChannel + 1}
+                    visible={fullscreen ? true : !guideOpen}
+                    subreddit={program?.video.subreddit}
+                    pendingDigits={pendingDigit}
+                    totalChannels={NUM_CHANNELS}
+                  />
+                </div>
 
                 {guideOpen && (
                   <TvGuide
@@ -518,28 +540,37 @@ export default function TvScreen() {
                     currentProgram={program}
                     onSelect={selectChannel}
                     onClose={() => setGuideOpen(false)}
+                    fullscreen={isMobile}
                   />
                 )}
 
                 {!launched && (
                   <div className="absolute inset-0 z-40 w-full h-full bg-black flex flex-col items-center justify-center gap-6 overflow-hidden">
-                    <div className="absolute inset-0 opacity-10" style={{ background: `url('${withBase("/bg2.png")}') center/cover no-repeat` }} />
+                    <div
+                      className="absolute inset-0 opacity-10"
+                      style={{
+                        background: `url('${withBase("/bg2.png")}') center/cover no-repeat`,
+                      }}
+                    />
                     <div className="relative z-10 flex flex-col items-center gap-5 max-w-sm px-5 text-center">
                       <div className="text-green-500/60 font-mono text-[10px] tracking-[0.3em] animate-pulse">
                         ● BROADCAST INITIALIZING ●
                       </div>
                       <h1 className="text-green-400 text-2xl font-mono tracking-wide leading-tight">
-                        INTERDIMENSIONAL<br />CABLE
+                        INTERDIMENSIONAL
+                        <br />
+                        CABLE
                       </h1>
                       <div className="h-px w-24 bg-green-800/50" />
                       <p className="text-green-300/70 font-mono text-xs leading-relaxed">
                         You have tuned into a television signal from an adjacent dimension. Our
-                        programming consists entirely of AI-generated videos scraped from
-                        Reddit. We are not responsible for any existential dread, temporal
-                        displacement, or spontaneous third-eye activation.
+                        programming consists entirely of AI-generated videos scraped from Reddit. We
+                        are not responsible for any existential dread, temporal displacement, or
+                        spontaneous third-eye activation.
                       </p>
                       <div className="text-green-500/40 font-mono text-[10px] leading-relaxed">
-                        No subscription required. No refunds possible.<br />
+                        No subscription required. No refunds possible.
+                        <br />
                         The signal finds <em>you</em>.
                       </div>
                       <button
@@ -574,19 +605,36 @@ export default function TvScreen() {
         </div>
 
         {!fullscreen && (
-          <div className="mt-8 lg:mt-0 lg:absolute lg:right-10 lg:bottom-10 z-20 self-center lg:self-auto pb-8 lg:pb-0">
-            <RemoteControl
-              onNumberPress={handleNumberPress}
-              onChannelUp={() => changeChannel(1)}
-              onChannelDown={() => changeChannel(-1)}
-              onVolumeUp={() => setVolume((v) => Math.min(1, v + 0.1))}
-              onVolumeDown={() => setVolume((v) => Math.max(0, v - 0.1))}
-              onMuteToggle={() => setMuted((m) => !m)}
-              onGuidePress={() => setGuideOpen((v) => !v)}
-              onEnterPress={() => setFullscreen((f) => !f)}
-              isMuted={muted}
-            />
-          </div>
+          <>
+            <div
+              className="hidden lg:flex mt-8 lg:mt-0 lg:absolute lg:right-10 z-20 self-center lg:self-auto pb-8 lg:pb-0"
+              style={{ bottom: "max(1rem, 3vh)" }}
+            >
+              <RemoteControl
+                onNumberPress={handleNumberPress}
+                onChannelUp={() => changeChannel(1)}
+                onChannelDown={() => changeChannel(-1)}
+                onVolumeUp={() => setVolume((v) => Math.min(1, v + 0.1))}
+                onVolumeDown={() => setVolume((v) => Math.max(0, v - 0.1))}
+                onMuteToggle={() => setMuted((m) => !m)}
+                onGuidePress={() => setGuideOpen((v) => !v)}
+                onEnterPress={() => setFullscreen((f) => !f)}
+                isMuted={muted}
+              />
+            </div>
+
+            <div
+              className="lg:hidden w-full z-20"
+              style={{ display: guideOpen ? "none" : "block" }}
+            >
+              <MobileControls
+                onChannelUp={() => changeChannel(1)}
+                onChannelDown={() => changeChannel(-1)}
+                onGuidePress={() => setGuideOpen((v) => !v)}
+                onFullscreenPress={() => setFullscreen((f) => !f)}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

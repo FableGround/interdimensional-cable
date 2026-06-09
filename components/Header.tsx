@@ -21,29 +21,24 @@ const quirks: Record<string, React.CSSProperties> = {
 
 export default function Header() {
   return (
-    <div className="w-full text-center select-none" style={{ zIndex: 60 }}>
+    <div
+      className="w-full text-center select-none py-1 md:py-0"
+      style={{ zIndex: 60, marginBottom: "0.5rem", marginTop: "0.5rem" }}
+    >
       <div
-        className="text-5xl leading-tight tracking-[0.05em] flex flex-col items-center"
+        className="text-xl md:text-3xl lg:text-4xl leading-tight tracking-[0.05em] flex flex-col items-center"
         style={{ fontFamily: "var(--font-display)", color: "#3d2b4f" }}
       >
         <div className="flex">
           {[...title].map((char, i) => (
-            <span
-              key={`t-${i}`}
-              className="inline-block"
-              style={quirks[char] ?? {}}
-            >
+            <span key={`t-${i}`} className="inline-block" style={quirks[char] ?? {}}>
               {char}
             </span>
           ))}
         </div>
         <div className="flex">
           {[...subtitle].map((char, i) => (
-            <span
-              key={`s-${i}`}
-              className="inline-block"
-              style={quirks[char] ?? {}}
-            >
+            <span key={`s-${i}`} className="inline-block" style={quirks[char] ?? {}}>
               {char}
             </span>
           ))}

@@ -2,7 +2,7 @@ import { withBase } from "../lib/basePath";
 
 export default function TvFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative w-full max-w-[900px] flex items-center justify-center">
+    <div className="relative w-full max-w-[860px] flex items-center justify-center">
       <div
         className="relative w-full"
         style={{
@@ -20,7 +20,12 @@ export default function TvFrame({ children }: { children: React.ReactNode }) {
           src={withBase("/tv-frame.png")}
           alt=""
           className="absolute inset-0 w-full h-full pointer-events-none select-none"
-          style={{ objectFit: "contain", zIndex: 50, borderRadius: "12px", border: "2px solid #333" }}
+          style={{
+            objectFit: "contain",
+            zIndex: 50,
+            borderRadius: "12px",
+            border: "2px solid #333",
+          }}
         />
       </div>
     </div>

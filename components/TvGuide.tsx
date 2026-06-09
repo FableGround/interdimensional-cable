@@ -23,6 +23,7 @@ interface TvGuideProps {
   currentProgram: CurrentProgram | null;
   onSelect: (channel: number) => void;
   onClose: () => void;
+  fullscreen?: boolean;
 }
 
 const PX_PER_SECOND = 2.5;
@@ -105,6 +106,7 @@ export default function TvGuide({
   currentProgram,
   onSelect,
   onClose,
+  fullscreen = false,
 }: TvGuideProps) {
   const [focusChannel, setFocusChannel] = useState(currentChannel);
   const channelsRef = useRef<HTMLDivElement>(null);
@@ -250,18 +252,36 @@ export default function TvGuide({
 
   return (
     <div
-      className="absolute z-40 flex flex-col animate-guide-up"
-      style={{
-        top: "8%",
-        right: "8%",
-        bottom: "7%",
-        left: "7%",
-        backgroundColor: "#0e1a11",
-        borderRadius: "8px",
-      }}
+      className={`${
+        fullscreen
+          ? "fixed inset-0 z-[999]"
+          : "absolute z-40"
+      } flex flex-col animate-guide-up overflow-hidden`}
+      style={
+        fullscreen
+          ? {
+              backgroundColor: "#0e1a11",
+            }
+          : {
+              top: "8%",
+              right: "8%",
+              bottom: "7%",
+              left: "7%",
+              backgroundColor: "#0e1a11",
+              borderRadius: "8px",
+            }
+      }
     >
       {/* Time header */}
-      <div className="flex shrink-0" style={{ height: TIME_HEADER_HEIGHT, borderTopLeftRadius: 8, borderTopRightRadius: 8, overflow: "hidden" }}>
+      <div className="flex shrink-0 relative" style={{ height: TIME_HEADER_HEIGHT, borderTopLeftRadius: fullscreen ? 0 : 8, borderTopRightRadius: fullscreen ? 0 : 8, overflow: "hidden" }}>
+        {fullscreen && (
+          <button
+            onClick={onClose}
+            className="absolute top-1 right-2 z-[1000] px-3 py-1 font-mono text-sm tracking-wider text-green-400/80 bg-green-900/80 border border-green-500/40 hover:bg-green-800 hover:text-green-300 active:scale-95 transition-all"
+          >
+            CLOSE
+          </button>
+        )}
         <div
           className="shrink-0 border-b border-r border-green-700/40 bg-green-900/60 flex items-center justify-center"
           style={{ width: CHANNEL_COL_WIDTH }}
@@ -291,7 +311,7 @@ export default function TvGuide({
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden" style={{ overflow: "hidden" }}>
+      <div className="flex-1 flex overflow-hidden min-h-0" style={{ overflow: "hidden" }}>
         {/* Channel column */}
         <div
           ref={channelsRef}
@@ -422,10 +442,9 @@ export default function TvGuide({
             height: 52,
             backgroundColor: "#091a0e",
             borderTop: "1px solid rgba(74,222,128,0.15)",
-            borderBottomLeftRadius: 8,
-            borderBottomRightRadius: 8,
-            width: "90%",
-            marginLeft: 13,
+            borderBottomLeftRadius: fullscreen ? 0 : 8,
+            borderBottomRightRadius: fullscreen ? 0 : 8,
+            width: "100%",
           }}
         >
           {currentProgram.video.thumbnail && (
